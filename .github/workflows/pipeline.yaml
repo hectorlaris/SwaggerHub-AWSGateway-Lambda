@@ -2,23 +2,90 @@ name: Pipeline
 
 on: [workflow_dispatch]
 
+# GitHub Actions Runner Compatibility Notes:
+# - All jobs use ubuntu-latest runner (Node.js 20+ by default)
+# - All GitHub Actions are compatible with Node.js 20+
+# - Deprecated actions (checkout@v3, configure-aws-credentials@v1-node16, setup-python@v4) have been updated
+# - AWS SDK v3 is used through modern actions (configure-aws-credentials@v4)
+# - No Node 16 specifications remain in the pipeline
+
 env:
+  # AWS Credentials Configuration
+  # These use long-term credentials stored in GitHub Secrets
+  # For enhanced security, consider migrating to GitHub OIDC
   PIPELINE_USER_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   PIPELINE_USER_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  
+  # SAM Configuration
   SAM_TEMPLATE: books-api/template.yaml
   STACK_NAME: books-api-dev
+  
+  # IAM Role Configuration
+  # PIPELINE_EXECUTION_ROLE: Role assumed by GitHub Actions for AWS operations
+  # CLOUDFORMATION_EXECUTION_ROLE: Role used by CloudFormation for resource creation
   PIPELINE_EXECUTION_ROLE: ${{ vars.PIPELINE_EXECUTION_ROLE }}
   CLOUDFORMATION_EXECUTION_ROLE: ${{ vars.CLOUDFORMATION_EXECUTION_ROLE }}
+  
+  # S3 Configuration for SAM artifacts
   ARTIFACTS_BUCKET: ${{ vars.ARTIFACTS_BUCKET }}
   
-  # change region to your preferred region
+  # AWS Region Configuration
+  # Change region to your preferred region
   AWS_REGION: ${{ vars.AWS_REGION }}
 
 jobs:
-  test:
+  validate-environment:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Validate Node.js compatibility
+        run: |
+          echo "Validating Node.js compatibility for GitHub Actions..."
+          echo "Node.js version: $(node --version)"
+          echo "NPM version: $(npm --version)"
+          
+          # Check Node.js version compatibility
+          NODE_VERSION=$(node --version | cut -d'v' -f2)
+          NODE_MAJOR=$(echo $NODE_VERSION | cut -d'.' -f1)
+          
+          if [ $NODE_MAJOR -lt 20 ]; then
+            echo "❌ Node.js version $NODE_VERSION is not compatible"
+            echo "GitHub Actions runners require Node.js 20+ for compatibility"
+            echo "Current runner uses: $(node --version)"
+            exit 1
+          fi
+          
+          echo "✅ Node.js $NODE_VERSION is compatible (requires 20+)"
+          
+      - name: Validate AWS credentials
+        run: |
+          echo "Validating AWS credential configuration..."
+          echo "AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:0:4}****"
+          echo "AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:0:4}****"
+          echo "PIPELINE_EXECUTION_ROLE: ${{ vars.PIPELINE_EXECUTION_ROLE }}"
+          echo "CLOUDFORMATION_EXECUTION_ROLE: ${{ vars.CLOUDFORMATION_EXECUTION_ROLE }}"
+          echo "ARTIFACTS_BUCKET: ${{ vars.ARTIFACTS_BUCKET }}"
+          echo "AWS_REGION: ${{ vars.AWS_REGION }}"
+          
+          # Validate that required variables are set
+          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
+            echo "❌ AWS_ACCESS_KEY_ID secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]; then
+            echo "❌ AWS_SECRET_ACCESS_KEY secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ vars.PIPELINE_EXECUTION_ROLE }}" ]; then
+            echo "❌ PIPELINE_EXECUTION_ROLE variable is not set"
+            exit 1
+          fi
+          echo "✅ AWS credential configuration validated successfully"
+
+  test:
+    needs: [validate-environment]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '6.0.x'      
@@ -27,23 +94,23 @@ jobs:
   
 
   build-and-package:
-    needs: [test]
+    needs: [validate-environment, test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '6.0.x'          
-      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/setup-sam@v3
 
       - name: Build resources
         run: sam build --template ${SAM_TEMPLATE}
 
       - name: Assume the pipeline user role
-        uses: aws-actions/configure-aws-credentials@v1-node16
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ env.PIPELINE_USER_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ env.PIPELINE_USER_SECRET_ACCESS_KEY }}
@@ -51,7 +118,20 @@ jobs:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           role-session-name: lambda-packaging
           role-duration-seconds: 3600
-          role-skip-session-tagging: true
+
+      - name: Validate AWS session
+        run: |
+          echo "Validating AWS session..."
+          aws sts get-caller-identity --region ${{ env.AWS_REGION }}
+          if [ $? -ne 0 ]; then
+            echo "❌ Failed to assume IAM role: ${{ env.PIPELINE_EXECUTION_ROLE }}"
+            echo "Please check:"
+            echo "1. AWS credentials in GitHub secrets"
+            echo "2. IAM role trust relationship"
+            echo "3. Role permissions"
+            exit 1
+          fi
+          echo "✅ Successfully assumed IAM role"
 
       - name: Upload artifacts to artifact buckets
         run: |
@@ -68,20 +148,20 @@ jobs:
     needs: [build-and-package]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '6.0.x'          
-      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/setup-sam@v3
       - uses: actions/download-artifact@v4
         with:
           name: packaged-lambda.yaml
 
       - name: Assume the pipeline user role
-        uses: aws-actions/configure-aws-credentials@v1-node16
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ env.PIPELINE_USER_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ env.PIPELINE_USER_SECRET_ACCESS_KEY }}
@@ -89,7 +169,17 @@ jobs:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           role-session-name: lambda-deployment
           role-duration-seconds: 3600
-          role-skip-session-tagging: true
+
+      - name: Validate AWS session
+        run: |
+          echo "Validating AWS session..."
+          aws sts get-caller-identity --region ${{ env.AWS_REGION }}
+          if [ $? -ne 0 ]; then
+            echo "❌ Failed to assume IAM role: ${{ env.PIPELINE_EXECUTION_ROLE }}"
+            echo "Please check IAM role configuration and permissions"
+            exit 1
+          fi
+          echo "✅ Successfully assumed IAM role"
 
       - name: Deploy to account
         run: |
@@ -105,12 +195,12 @@ jobs:
     needs: [deploy]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '6.0.x'
       - name: Assume the pipeline user role
-        uses: aws-actions/configure-aws-credentials@v1-node16
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ env.PIPELINE_USER_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ env.PIPELINE_USER_SECRET_ACCESS_KEY }}
@@ -118,7 +208,6 @@ jobs:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           role-session-name: testing-deployment
           role-duration-seconds: 3600
-          role-skip-session-tagging: true
       - run: |
           dotnet test books-api/test/Bookstore.IntegrationTest/Bookstore.IntegrationTest.csproj
         env:
@@ -130,15 +219,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Assume the pipeline user role
-        uses: aws-actions/configure-aws-credentials@v1-node16
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ env.PIPELINE_USER_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ env.PIPELINE_USER_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           role-session-name: get-cloud-formation-output
-          role-duration-seconds: 3600
-          role-skip-session-tagging: true        
+          role-duration-seconds: 3600        
       - run: |
           echo "AWS_API_ENDPOINT=$( aws cloudformation \
             --region ${AWS_REGION} describe-stacks \
