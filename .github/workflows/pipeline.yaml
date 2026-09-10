@@ -70,8 +70,15 @@ jobs:
       - name: Build resources
         run: sam build --template ${SAM_TEMPLATE}
 
+      - name: Debug OIDC token
+        run: |
+          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
+          echo "=== OIDC Token Claims ==="
+          echo $TOKEN | cut -d'.' -f2 | base64 -d 2>/dev/null | jq .
+
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4.3.1   # ← actualizado
+        uses: aws-actions/configure-aws-credentials@v4.3.1
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -114,7 +121,7 @@ jobs:
           name: packaged-lambda.yaml
 
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4.3.1   # ← actualizado
+        uses: aws-actions/configure-aws-credentials@v4.3.1
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -149,7 +156,7 @@ jobs:
           dotnet-version: '6.0.x'
 
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4.3.1   # ← actualizado
+        uses: aws-actions/configure-aws-credentials@v4.3.1
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -167,7 +174,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4.3.1   # ← actualizado
+        uses: aws-actions/configure-aws-credentials@v4.3.1
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
