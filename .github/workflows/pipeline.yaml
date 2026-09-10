@@ -33,6 +33,10 @@ jobs:
             echo "ARTIFACTS_BUCKET variable is not set"
             exit 1
           fi
+          if [ -z "${{ vars.AWS_REGION }}" ]; then
+            echo "AWS_REGION variable is not set"
+            exit 1
+          fi
           echo "AWS OIDC configuration validated successfully"
 
   test:
