@@ -10,7 +10,7 @@ permissions:
 # - All jobs use ubuntu-latest runner (Node.js 20+ by default)
 # - All GitHub Actions are compatible with Node.js 20+
 # - Using GitHub OIDC instead of long-term credentials
-# - AWS SDK v3 is used through modern actions (configure-aws-credentials@v4)
+# - AWS SDK v3 is used through modern actions (configure-aws-credentials@v4.1.0)
 
 env:
   # OIDC Configuration: No static credentials needed.
@@ -86,7 +86,7 @@ jobs:
         run: sam build --template ${SAM_TEMPLATE}
 
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -133,7 +133,7 @@ jobs:
           name: packaged-lambda.yaml
 
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
             role-to-assume: arn:aws:iam::962682390364:role/pipeline-execution-role
             aws-region: us-east-1
@@ -170,7 +170,7 @@ jobs:
         with:
           dotnet-version: '6.0.x'
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/.1.0
         with:
             role-to-assume: arn:aws:iam::962682390364:role/pipeline-execution-role
             aws-region: us-east-1       
@@ -187,7 +187,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
             role-to-assume: arn:aws:iam::962682390364:role/pipeline-execution-role
             aws-region: us-east-1     
