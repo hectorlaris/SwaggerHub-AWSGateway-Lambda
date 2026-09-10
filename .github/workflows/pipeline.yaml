@@ -86,7 +86,7 @@ jobs:
         run: sam build --template ${SAM_TEMPLATE}
 
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -132,7 +132,7 @@ jobs:
           name: packaged-lambda.yaml
 
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -166,7 +166,7 @@ jobs:
         with:
           dotnet-version: '6.0.x'
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -181,7 +181,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
