@@ -1,28 +1,18 @@
 name: Pipeline
 
-on: [workflow_dispatch]
+on:
+  workflow_dispatch:
 
 permissions:
-  id-token: write   # Requerido para OIDC (autenticacion sin credenciales estaticas)
-  contents: read    # Permiso para clonar el repositorio
-
-# GitHub Actions Runner Compatibility Notes:
-# - All jobs use ubuntu-latest runner (Node.js 20+ by default)
-# - All GitHub Actions are compatible with Node.js 20+
-# - Using GitHub OIDC instead of long-term credentials
-# - AWS SDK v3 is used through modern actions (configure-aws-credentials@v4)
+  id-token: write
+  contents: read
 
 env:
-  # OIDC Configuration: No static credentials needed.
-  # Authentication happens by assuming an IAM role via GitHub OIDC.
-
   # SAM Configuration
   SAM_TEMPLATE: books-api/template.yaml
   STACK_NAME: books-api-dev
 
   # IAM Role Configuration
-  # PIPELINE_EXECUTION_ROLE: Role assumed by GitHub Actions via OIDC
-  # CLOUDFORMATION_EXECUTION_ROLE: Role used by CloudFormation for resource creation
   PIPELINE_EXECUTION_ROLE: ${{ vars.PIPELINE_EXECUTION_ROLE }}
   CLOUDFORMATION_EXECUTION_ROLE: ${{ vars.CLOUDFORMATION_EXECUTION_ROLE }}
 
@@ -35,6 +25,7 @@ env:
 jobs:
   validate-environment:
     runs-on: ubuntu-latest
+
     steps:
       - name: Validate AWS OIDC configuration
         run: |
@@ -48,45 +39,67 @@ jobs:
             echo "PIPELINE_EXECUTION_ROLE variable is not set"
             exit 1
           fi
+
           if [ -z "${{ vars.CLOUDFORMATION_EXECUTION_ROLE }}" ]; then
             echo "CLOUDFORMATION_EXECUTION_ROLE variable is not set"
             exit 1
           fi
+
           if [ -z "${{ vars.ARTIFACTS_BUCKET }}" ]; then
             echo "ARTIFACTS_BUCKET variable is not set"
             exit 1
           fi
-          echo "AWS OIDC configuration validated successfully (no static credentials needed)"
+
+          echo "AWS OIDC configuration validated successfully"
 
   test:
-    needs: [validate-environment]
+    needs:
+      - validate-environment
+
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '6.0.x'
-      - run: |
+          dotnet-version: '8.0.x'
+
+      - name: Verify Node Version
+        run: |
+          node --version
+          npm --version
+
+      - name: Run Unit Tests
+        run: |
           dotnet test books-api/test/Bookstore.Test/Bookstore.Tests.csproj
 
   build-and-package:
-    needs: [validate-environment, test]
+    needs:
+      - validate-environment
+      - test
+
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.10'
-      - uses: actions/setup-dotnet@v4
+          python-version: '3.12'
+
+      - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '6.0.x'
+          dotnet-version: '8.0.x'
+
       - uses: aws-actions/setup-sam@v3
 
       - name: Build resources
-        run: sam build --template ${SAM_TEMPLATE}
+        run: |
+          sam build --template ${SAM_TEMPLATE}
 
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4.1.0
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -94,45 +107,51 @@ jobs:
       - name: Validate AWS session
         run: |
           echo "Validating AWS session..."
+
           if ! aws sts get-caller-identity --region ${{ env.AWS_REGION }}; then
-            echo "Failed to assume IAM role via OIDC: ${{ env.PIPELINE_EXECUTION_ROLE }}"
-            echo "Please check:"
-            echo "1. IAM role trust relationship with GitHub OIDC"
-            echo "2. OIDC provider configuration in AWS IAM"
-            echo "3. Role permissions"
+            echo "Failed to assume IAM role via OIDC"
             exit 1
           fi
+
           echo "Successfully assumed IAM role via OIDC"
 
-      - name: Upload artifacts to artifact buckets
+      - name: Upload artifacts to artifact bucket
         run: |
           sam package \
             --s3-bucket ${ARTIFACTS_BUCKET} \
             --region ${AWS_REGION} \
             --output-template-file packaged-lambda.yaml
+
       - uses: actions/upload-artifact@v4
         with:
           name: packaged-lambda.yaml
           path: packaged-lambda.yaml
 
   deploy:
-    needs: [build-and-package]
+    needs:
+      - build-and-package
+
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.10'
-      - uses: actions/setup-dotnet@v4
+          python-version: '3.12'
+
+      - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '6.0.x'
+          dotnet-version: '8.0.x'
+
       - uses: aws-actions/setup-sam@v3
-      - uses: actions/download-artifact@v4
+
+      - uses: actions/download-artifact@v5
         with:
           name: packaged-lambda.yaml
 
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4.1.0
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -140,17 +159,19 @@ jobs:
       - name: Validate AWS session
         run: |
           echo "Validating AWS session..."
+
           if ! aws sts get-caller-identity --region ${{ env.AWS_REGION }}; then
-            echo "Failed to assume IAM role via OIDC: ${{ env.PIPELINE_EXECUTION_ROLE }}"
-            echo "Please check OIDC configuration and IAM role permissions"
+            echo "Failed to assume IAM role via OIDC"
             exit 1
           fi
+
           echo "Successfully assumed IAM role via OIDC"
 
-      - name: Deploy to account
+      - name: Deploy to AWS Account
         run: |
-          sam deploy --stack-name ${STACK_NAME} \
-            --template packaged-lambda.yaml \
+          sam deploy \
+            --stack-name ${STACK_NAME} \
+            --template-file packaged-lambda.yaml \
             --capabilities CAPABILITY_IAM \
             --region ${AWS_REGION} \
             --s3-bucket ${ARTIFACTS_BUCKET} \
@@ -158,42 +179,54 @@ jobs:
             --role-arn ${CLOUDFORMATION_EXECUTION_ROLE}
 
   integration-test:
-    needs: [deploy]
+    needs:
+      - deploy
+
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '6.0.x'
+          dotnet-version: '8.0.x'
+
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4.1.0
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
-      - run: |
+
+      - name: Execute Integration Tests
+        run: |
           dotnet test books-api/test/Bookstore.IntegrationTest/Bookstore.IntegrationTest.csproj
         env:
-          STACK_NAME: ${{ env.STACK_NAME}}
+          STACK_NAME: ${{ env.STACK_NAME }}
           AWS_REGION: ${{ env.AWS_REGION }}
 
   output-endpoint:
-    needs: [integration-test]
+    needs:
+      - integration-test
+
     runs-on: ubuntu-latest
+
     steps:
       - name: Assume the pipeline user role via OIDC
-        uses: aws-actions/configure-aws-credentials@v4.1.0
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
-      - run: |
-          echo "AWS_API_ENDPOINT=$( aws cloudformation \
-            --region ${AWS_REGION} describe-stacks \
-            --stack-name ${STACK_NAME} \
-            --query "Stacks[0].Outputs[0].OutputValue" --output text)" >> $GITHUB_OUTPUT
+
+      - name: Get API Endpoint
         id: get-outputs
-      - name: Write summary
         run: |
-          echo "AWS_API_Gateway_Endpoint: ${{steps.get-outputs.outputs.AWS_API_ENDPOINT}}" >> $GITHUB_STEP_SUMMARY
+          echo "AWS_API_ENDPOINT=$(aws cloudformation \
+            describe-stacks \
+            --region ${AWS_REGION} \
+            --stack-name ${STACK_NAME} \
+            --query 'Stacks[0].Outputs[0].OutputValue' \
+            --output text)" >> $GITHUB_OUTPUT
 
-
-
+      - name: Write Summary
+        run: |
+          echo "AWS_API_Gateway_Endpoint: ${{ steps.get-outputs.outputs.AWS_API_ENDPOINT }}" >> $GITHUB_STEP_SUMMARY
