@@ -8,19 +8,12 @@ permissions:
   contents: read
 
 env:
-  # SAM Configuration
   SAM_TEMPLATE: books-api/template.yaml
   STACK_NAME: books-api-dev
-
-  # IAM Role Configuration
+  AWS_REGION: ${{ vars.AWS_REGION }}
   PIPELINE_EXECUTION_ROLE: ${{ vars.PIPELINE_EXECUTION_ROLE }}
   CLOUDFORMATION_EXECUTION_ROLE: ${{ vars.CLOUDFORMATION_EXECUTION_ROLE }}
-
-  # S3 Configuration for SAM artifacts
   ARTIFACTS_BUCKET: ${{ vars.ARTIFACTS_BUCKET }}
-
-  # AWS Region Configuration
-  AWS_REGION: ${{ vars.AWS_REGION }}
 
 jobs:
   validate-environment:
@@ -218,6 +211,16 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Get API Endpoint
+        id: get-outputs
+        run: |
+          echo "AWS_API_ENDPOINT=$(aws cloudformation \
+            describe-stacks \
+            --region ${AWS_REGION} \
+            --stack-name ${STACK_NAME} \
+            --query 'Stacks[0].Outputs[0].OutputValue' \
+            --output text)" >> $GITHUB_OUTPUT
+
+      - name: Get API Endpoint and Write Summary
         id: get-outputs
         run: |
           echo "AWS_API_ENDPOINT=$(aws cloudformation \
