@@ -172,8 +172,10 @@ jobs:
       - name: Assume the pipeline user role via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
+            role-to-assume: arn:aws:iam::962682390364:role/pipeline-execution-role
+            aws-region: us-east-1       
+          # role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
+          # aws-region: ${{ env.AWS_REGION }}
       - run: |
           dotnet test books-api/test/Bookstore.IntegrationTest/Bookstore.IntegrationTest.csproj
         env:
@@ -187,8 +189,10 @@ jobs:
       - name: Assume the pipeline user role via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
+            role-to-assume: arn:aws:iam::962682390364:role/pipeline-execution-role
+            aws-region: us-east-1     
+          # role-to-assume: ${{ env.PIPELINE_EXECUTION_ROLE }}
+          # aws-region: ${{ env.AWS_REGION }}
       - run: |
           echo "AWS_API_ENDPOINT=$( aws cloudformation \
             --region ${AWS_REGION} describe-stacks \
